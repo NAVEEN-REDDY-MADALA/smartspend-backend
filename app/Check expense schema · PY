@@ -1,0 +1,77 @@
+"""
+Diagnostic script to check Expense table schema
+Run this in your project directory
+"""
+
+# First, let's check what columns your Expense model actually has
+print("=" * 50)
+print("CHECKING SQLALCHEMY MODEL")
+print("=" * 50)
+
+try:
+    from app.models import Expense
+    from sqlalchemy import inspect
+    
+    # Get column names from the model
+    mapper = inspect(Expense)
+    columns = [column.key for column in mapper.columns]
+    
+    print("Columns defined in Expense model:")
+    for col in columns:
+        print(f"  - {col}")
+    
+    if 'is_auto' in columns:
+        print("\n✅ 'is_auto' column IS defined in the model")
+    else:
+        print("\n❌ 'is_auto' column is NOT defined in the model")
+        print("\nYou need to add this to your Expense model:")
+        print("    is_auto = Column(Boolean, default=False)")
+        
+except Exception as e:
+    print(f"Error loading model: {e}")
+
+print("\n" + "=" * 50)
+print("CHECKING ACTUAL DATABASE SCHEMA")
+print("=" * 50)
+
+# Now check the actual database
+try:
+    from app.database import engine
+    from sqlalchemy import inspect
+    
+    inspector = inspect(engine)
+    db_columns = inspector.get_columns('expenses')
+    
+    print("\nColumns in database 'expenses' table:")
+    for col in db_columns:
+        print(f"  - {col['name']} ({col['type']})")
+    
+    db_col_names = [col['name'] for col in db_columns]
+    
+    if 'is_auto' in db_col_names:
+        print("\n✅ 'is_auto' column EXISTS in database")
+        # Check the default value
+        for col in db_columns:
+            if col['name'] == 'is_auto':
+                print(f"   Type: {col['type']}")
+                print(f"   Nullable: {col['nullable']}")
+                print(f"   Default: {col.get('default', 'No default set')}")
+    else:
+        print("\n❌ 'is_auto' column does NOT exist in database")
+        print("\nRun this SQL to add it:")
+        print("    ALTER TABLE expenses ADD COLUMN is_auto BOOLEAN DEFAULT FALSE;")
+        
+except Exception as e:
+    print(f"Error checking database: {e}")
+
+print("\n" + "=" * 50)
+print("RECOMMENDATION")
+print("=" * 50)
+
+print("""
+If the column is:
+- ✅ In model but ❌ NOT in database → Create migration or run ALTER TABLE
+- ❌ NOT in model but ✅ in database → Add to models.py
+- ❌ NOT in either → Add to models.py AND run migration
+- ✅ In both → Check your endpoint code is setting is_auto=True
+""")
