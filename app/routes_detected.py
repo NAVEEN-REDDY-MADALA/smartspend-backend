@@ -8,7 +8,7 @@ from app.auth import get_current_user
 from app import models
 from pydantic import BaseModel
 
-router = APIRouter(prefix="/api/detected", tags=["detected"])
+router = APIRouter(prefix="/api/detected", tags=["Detected"])
 logger = logging.getLogger(__name__)
 
 
@@ -68,7 +68,51 @@ def create_detected_transaction(
     logger.info("✅ Detected transaction saved")
 
     return {"message": "Detected transaction created"}
+# =====================================================
+# SYNC DETECTED TRANSACTION (ANDROID WORKER)
+# =====================================================
+@router.post("/sync")
+def sync_detected_transaction(
+    data: DetectedTransactionCreate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    logger.info("🔄 SYNC DETECTED TRANSACTION")
 
+    existing = (
+        db.query(models.DetectedTransaction)
+        .filter(
+            models.DetectedTransaction.user_id == current_user.id,
+            models.DetectedTransaction.sms_hash == data.sms_hash,
+        )
+        .first()
+    )
+
+    if existing:
+        logger.info("✅ Already synced")
+        return {"synced": True}
+
+    txn_date = datetime.fromtimestamp(data.transaction_date / 1000)
+
+    detected = models.DetectedTransaction(
+        user_id=current_user.id,
+        amount=data.amount,
+        transaction_type="debit",
+        merchant=data.merchant,
+        category_guess=data.category_guess,
+        category=data.category_guess,
+        transaction_date=txn_date,
+        status="pending",
+        source="sms",
+        sms_hash=data.sms_hash,
+    )
+
+    db.add(detected)
+    db.commit()
+
+    logger.info("✅ Synced successfully")
+
+    return {"synced": True}
 
 # =====================================================
 # GET PENDING TRANSACTIONS (FRONTEND)
