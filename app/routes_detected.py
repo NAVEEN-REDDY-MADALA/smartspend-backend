@@ -68,6 +68,8 @@ def create_detected_transaction(
     logger.info("✅ Detected transaction saved")
 
     return {"message": "Detected transaction created"}
+
+
 # =====================================================
 # SYNC DETECTED TRANSACTION (ANDROID WORKER)
 # =====================================================
@@ -113,6 +115,7 @@ def sync_detected_transaction(
     logger.info("✅ Synced successfully")
 
     return {"synced": True}
+
 
 # =====================================================
 # GET PENDING TRANSACTIONS (FRONTEND)
@@ -190,11 +193,12 @@ def accept_transaction(
     if detected.status != "pending":
         return {"message": "Already processed"}
 
-    # ✅ Create expense
+    # ✅ Create expense — now includes merchant name
     expense = models.Expense(
         user_id=current_user.id,
         amount=detected.amount,
         category=detected.category or detected.category_guess,
+        merchant=detected.merchant,   # ← THE FIX: save merchant from SMS detection
         date=detected.transaction_date,
         is_auto=True,
     )
@@ -206,7 +210,13 @@ def accept_transaction(
 
     logger.info("✅ Transaction accepted & expense created")
 
-    return {"message": "Transaction accepted"}
+    # Return enough info for the frontend toast message
+    return {
+        "message": "Transaction accepted",
+        "amount": detected.amount,
+        "merchant": detected.merchant,
+        "category": detected.category or detected.category_guess,
+    }
 
 
 # =====================================================

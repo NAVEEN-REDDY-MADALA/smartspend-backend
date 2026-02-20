@@ -32,34 +32,35 @@ class IncomeUpdate(BaseModel):
 class ExpenseCreate(BaseModel):
     amount: float
     category: str
+    merchant: Optional[str] = None   # ← NEW
     date: datetime
 
 
 class ExpenseUpdate(BaseModel):
     amount: Optional[float] = None
     category: Optional[str] = None
+    merchant: Optional[str] = None   # ← NEW
     date: Optional[datetime] = None
 
 
-# ✅ ADD THIS - Auto Expense Create Schema
 class AutoExpenseCreate(BaseModel):
     amount: int
     category: Optional[str] = "Other"
+    merchant: Optional[str] = None   # ← NEW
     date: Optional[datetime] = None
 
 
-# ✅ UPDATE THIS - Expense Output Schema (what's returned to frontend)
 class ExpenseOut(BaseModel):
     id: int
     user_id: int
     amount: float
     category: str
+    merchant: Optional[str] = None   # ← NEW
     date: datetime
-    is_auto: bool  # ✅ ADD THIS LINE
+    is_auto: bool
 
     class Config:
-        from_attributes = True  # For SQLAlchemy models (Pydantic v2)
-        # orm_mode = True  # Use this if you're on Pydantic v1
+        from_attributes = True
 
 
 # ---------- GOALS ----------
@@ -82,7 +83,7 @@ class GoalUpdate(BaseModel):
 # ---------- DETECTED TRANSACTIONS ----------
 class DetectedTransactionCreate(BaseModel):
     amount: float
-    transaction_type: str  # debit / credit
+    transaction_type: str
     merchant: Optional[str] = None
     category_guess: Optional[str] = None
     transaction_date: datetime
@@ -95,13 +96,15 @@ class DetectedTransactionUpdate(BaseModel):
     category: Optional[str] = None
     amount: Optional[float] = None
     merchant: Optional[str] = None
-    status: Optional[str] = None  # pending / confirmed / ignored
+    status: Optional[str] = None
 
+
+# ---------- REMINDERS ----------
 class RecurringReminderCreate(BaseModel):
     name: str
     amount: float
     category: Optional[str] = "Bills"
-    day_of_month: int  # 1-31
+    day_of_month: int
     frequency: Optional[str] = "monthly"
     notify_7_days: Optional[bool] = True
     notify_3_days: Optional[bool] = False
@@ -141,4 +144,4 @@ class RecurringReminderOut(BaseModel):
     created_at: datetime
 
     class Config:
-        from_attributes = True 
+        from_attributes = True

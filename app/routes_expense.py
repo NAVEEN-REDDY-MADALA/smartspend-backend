@@ -22,6 +22,7 @@ def add_expense(
         user_id=current_user.id,
         amount=expense.amount,
         category=expense.category,
+        merchant=expense.merchant or None,   # ← NEW
         date=expense.date or datetime.utcnow(),
         is_auto=False
     )

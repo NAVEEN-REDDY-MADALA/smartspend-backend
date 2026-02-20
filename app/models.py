@@ -31,6 +31,8 @@ class Income(Base):
     date = Column(DateTime, default=datetime.utcnow)
 
     user = relationship("User", back_populates="incomes")
+
+
 class Expense(Base):
     __tablename__ = "expenses"
 
@@ -38,11 +40,13 @@ class Expense(Base):
     user_id = Column(Integer, ForeignKey("users.id"))
     amount = Column(Float, nullable=False)
     category = Column(String, nullable=False)
+    merchant = Column(String, nullable=True)   # ← NEW: merchant/shop name
     date = Column(DateTime, default=datetime.utcnow)
-
-    is_auto = Column(Boolean, default=False, nullable=False)  # ✅ ADD THIS
+    is_auto = Column(Boolean, default=False, nullable=False)
 
     user = relationship("User", back_populates="expenses")
+
+
 class ExpensePattern(Base):
     __tablename__ = "expense_patterns"
 
@@ -55,15 +59,17 @@ class ExpensePattern(Base):
     min_amount = Column(Float)
     max_amount = Column(Float)
 
-    preferred_hour_start = Column(Integer)  # 0–23
-    preferred_hour_end = Column(Integer)    # 0–23
+    preferred_hour_start = Column(Integer)
+    preferred_hour_end = Column(Integer)
 
-    frequency = Column(String, default="daily")  # daily / weekly
-    confidence = Column(Float, default=0.0)      # 0 → 1
+    frequency = Column(String, default="daily")
+    confidence = Column(Float, default=0.0)
 
     updated_at = Column(DateTime(timezone=True), server_default=func.now())
 
     user = relationship("User")
+
+
 class ExpenseSuggestion(Base):
     __tablename__ = "expense_suggestions"
 
@@ -74,9 +80,7 @@ class ExpenseSuggestion(Base):
     suggested_amount = Column(Float)
     suggested_date = Column(DateTime)
 
-    status = Column(String, default="pending")  
-    # pending / confirmed / rejected
-
+    status = Column(String, default="pending")
     source = Column(String, default="pattern")
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -96,7 +100,7 @@ class Goal(Base):
     current_amount = Column(Float, default=0.0)
     target_date = Column(DateTime)
     
-    status = Column(String, default="active")  # active / completed / paused
+    status = Column(String, default="active")
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
@@ -111,25 +115,23 @@ class DetectedTransaction(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
 
     amount = Column(Float, nullable=False)
-    transaction_type = Column(String, nullable=False)  # debit / credit
-    merchant = Column(String)  # Zomato, PhonePe, Bank name, etc.
-    category_guess = Column(String)  # Auto-detected category
-    category = Column(String)  # User-selected or confirmed category
+    transaction_type = Column(String, nullable=False)
+    merchant = Column(String)
+    category_guess = Column(String)
+    category = Column(String)
     
     transaction_date = Column(DateTime, nullable=False)
     detected_at = Column(DateTime(timezone=True), server_default=func.now())
     
-    status = Column(String, default="pending")  # pending / confirmed / ignored
-    source = Column(String, default="sms")  # sms / manual
+    status = Column(String, default="pending")
+    source = Column(String, default="sms")
     
-    # For duplicate detection
-    sms_hash = Column(String, index=True)  # Hash of amount+merchant+date to prevent duplicates
-    
-    # Additional metadata
-    account_number = Column(String)  # Last 4 digits if available
-    reference_number = Column(String)  # Transaction reference if available
+    sms_hash = Column(String, index=True)
+    account_number = Column(String)
+    reference_number = Column(String)
 
     user = relationship("User")
+
 
 class RecurringReminder(Base):
     __tablename__ = "recurring_reminders"
@@ -137,26 +139,21 @@ class RecurringReminder(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     
-    # Reminder details
-    name = Column(String, nullable=False)  # Netflix, Credit Card EMI, etc.
+    name = Column(String, nullable=False)
     amount = Column(Float, nullable=False)
     category = Column(String, default="Bills")
     
-    # Recurrence
-    day_of_month = Column(Integer, nullable=False)  # 1-31
-    frequency = Column(String, default="monthly")  # monthly, yearly
+    day_of_month = Column(Integer, nullable=False)
+    frequency = Column(String, default="monthly")
     
-    # Notification settings
     notify_7_days = Column(Boolean, default=True)
     notify_3_days = Column(Boolean, default=False)
     notify_1_day = Column(Boolean, default=True)
     notify_same_day = Column(Boolean, default=True)
     
-    # Status
     is_active = Column(Boolean, default=True)
-    auto_pay = Column(Boolean, default=False)  # If auto-debit is enabled
+    auto_pay = Column(Boolean, default=False)
     
-    # Metadata
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     last_notified = Column(DateTime(timezone=True))
@@ -174,7 +171,7 @@ class ReminderNotification(Base):
     
     scheduled_for = Column(DateTime, nullable=False)
     sent_at = Column(DateTime(timezone=True))
-    status = Column(String, default="pending")  # pending, sent, dismissed
+    status = Column(String, default="pending")
     
     reminder = relationship("RecurringReminder")
     user = relationship("User")
