@@ -14,7 +14,18 @@ class UserLogin(BaseModel):
     email: EmailStr
     password: str
 
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
 
+
+class VerifyOTPRequest(BaseModel):
+    email: EmailStr
+    otp: str
+
+
+class ResetPasswordRequest(BaseModel):
+    reset_token: str
+    new_password: str
 # ---------- INCOME ----------
 class IncomeCreate(BaseModel):
     amount: float

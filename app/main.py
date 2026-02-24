@@ -11,8 +11,10 @@ from app.routes_goals import router as goals_router
 from app.routes_summary import router as summary_router
 from app.routes_detected import router as detected_router
 from app.predict import router as predict_router
-
 from app.routes_reminders import router as reminders_router
+
+# ✅ NEW: Import forgot password router
+from app.routes_password import router as password_router  # ← ADD THIS
 
 
 models.Base.metadata.create_all(bind=engine)
@@ -28,22 +30,20 @@ app.add_middleware(
 )
 
 # ✅ ALL ROUTES UNDER /api
-app.include_router(auth_router, prefix="/api")
-app.include_router(income_router, prefix="/api")
-app.include_router(expense_router, prefix="/api")
+app.include_router(auth_router,        prefix="/api")
+app.include_router(income_router,      prefix="/api")
+app.include_router(expense_router,     prefix="/api")
 app.include_router(suggestions_router, prefix="/api")
-app.include_router(goals_router, prefix="/api")
-app.include_router(summary_router, prefix="/api")
+app.include_router(goals_router,       prefix="/api")
+app.include_router(summary_router,     prefix="/api")
+app.include_router(detected_router)
+app.include_router(predict_router,     prefix="/api/ai")
+app.include_router(reminders_router,   prefix="/api")
 
-app.include_router(detected_router) # ✅ FIXED
+# ✅ NEW: Forgot/Reset password routes
+app.include_router(password_router, prefix="/api")  # ← ADD THIS
 
-app.include_router(predict_router, prefix="/api/ai")
-app.include_router(reminders_router, prefix="/api")
 
 @app.get("/")
 def root():
     return {"message": "SmartSpend API running 🚀"}
-
-
-
-# Add this line with your other router includes

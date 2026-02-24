@@ -1,9 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from app import schemas, models
+from app import models
 from app.database import get_db
-from app.utils import hash_password, verify_password
-from app.auth import create_access_token, create_refresh_token, verify_refresh_token, SECRET_KEY, ALGORITHM
+from app.utils import hash_password
+from app.auth import SECRET_KEY, ALGORITHM
 from datetime import datetime, timedelta
 from pydantic import BaseModel, EmailStr
 from jose import jwt, JWTError
@@ -13,60 +13,7 @@ import string
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# REGISTER
-# ══════════════════════════════════════════════════════════════════════════════
-@router.post("/register")
-def register(user: schemas.UserCreate, db: Session = Depends(get_db)):
-    existing = db.query(models.User).filter(models.User.email == user.email).first()
-    if existing:
-        raise HTTPException(status_code=400, detail="Email already registered")
-
-    new_user = models.User(
-        name=user.name,
-        email=user.email,
-        password=hash_password(user.password)
-    )
-    db.add(new_user)
-    db.commit()
-    return {"message": "User created successfully"}
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# LOGIN
-# ══════════════════════════════════════════════════════════════════════════════
-@router.post("/login")
-def login(user: schemas.UserLogin, db: Session = Depends(get_db)):
-    db_user = db.query(models.User).filter(models.User.email == user.email).first()
-    if not db_user or not verify_password(user.password, db_user.password):
-        raise HTTPException(status_code=400, detail="Invalid credentials")
-
-    access_token  = create_access_token({"user_id": db_user.id})
-    refresh_token = create_refresh_token({"user_id": db_user.id})
-
-    return {
-        "access_token":  access_token,
-        "refresh_token": refresh_token,
-        "token_type":    "bearer"
-    }
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# REFRESH TOKEN
-# ══════════════════════════════════════════════════════════════════════════════
-@router.post("/refresh")
-def refresh_access_token(refresh_token: str, db: Session = Depends(get_db)):
-    user_id = verify_refresh_token(refresh_token)
-    user = db.query(models.User).filter(models.User.id == user_id).first()
-    if not user:
-        raise HTTPException(status_code=401, detail="User not found")
-    new_access_token = create_access_token({"user_id": user_id})
-    return {"access_token": new_access_token, "token_type": "bearer"}
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# FORGOT PASSWORD HELPERS
-# ══════════════════════════════════════════════════════════════════════════════
+# ── Schemas ────────────────────────────────────────────────────────────────────
 class ForgotPasswordRequest(BaseModel):
     email: EmailStr
 
@@ -78,15 +25,22 @@ class ResetPasswordRequest(BaseModel):
     reset_token: str
     new_password: str
 
-def generate_otp() -> str:
-    return "".join(random.choices(string.digits, k=6))
+
+# ── Helper ─────────────────────────────────────────────────────────────────────
+def generate_otp(length: int = 6) -> str:
+    return "".join(random.choices(string.digits, k=length))
+
 
 def create_reset_token(email: str) -> str:
+    """Create a short-lived reset token (5 min) — bypasses create_access_token type restriction."""
     expire = datetime.utcnow() + timedelta(minutes=5)
-    return jwt.encode(
-        {"user_email": email, "purpose": "password_reset", "exp": expire, "type": "password_reset"},
-        SECRET_KEY, algorithm=ALGORITHM
-    )
+    data = {
+        "user_email": email,
+        "purpose":    "password_reset",
+        "exp":        expire,
+        "type":       "password_reset"
+    }
+    return jwt.encode(data, SECRET_KEY, algorithm=ALGORITHM)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -98,7 +52,7 @@ def forgot_password(payload: ForgotPasswordRequest, db: Session = Depends(get_db
     if not user:
         raise HTTPException(status_code=404, detail="No account found with this email")
 
-    # Invalidate old OTPs
+    # Invalidate any old unused OTPs for this email
     db.query(models.PasswordResetOTP).filter(
         models.PasswordResetOTP.email == payload.email,
         models.PasswordResetOTP.used  == False
@@ -109,7 +63,10 @@ def forgot_password(payload: ForgotPasswordRequest, db: Session = Depends(get_db
     expires_at = datetime.utcnow() + timedelta(minutes=10)
 
     db.add(models.PasswordResetOTP(
-        email=payload.email, otp=otp, expires_at=expires_at, used=False
+        email      = payload.email,
+        otp        = otp,
+        expires_at = expires_at,
+        used       = False
     ))
     db.commit()
 
@@ -140,9 +97,11 @@ def verify_otp(payload: VerifyOTPRequest, db: Session = Depends(get_db)):
     record.used = True
     db.commit()
 
+    reset_token = create_reset_token(payload.email)
+
     return {
         "message":     "OTP verified successfully",
-        "reset_token": create_reset_token(payload.email)
+        "reset_token": reset_token
     }
 
 
@@ -170,4 +129,5 @@ def reset_password(payload: ResetPasswordRequest, db: Session = Depends(get_db))
 
     user.password = hash_password(payload.new_password)
     db.commit()
+
     return {"message": "Password reset successfully. You can now log in."}

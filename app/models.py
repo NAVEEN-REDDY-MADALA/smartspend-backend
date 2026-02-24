@@ -19,6 +19,19 @@ class User(Base):
     expenses = relationship("Expense", back_populates="user")
     goals = relationship("Goal", back_populates="user")
     detected_transactions = relationship("DetectedTransaction")
+
+ # ── Add this class to your existing models.py ─────────────────────────────────
+
+class PasswordResetOTP(Base):
+    __tablename__ = "password_reset_otps"
+
+    id         = Column(Integer, primary_key=True, index=True)
+    email      = Column(String, nullable=False, index=True)
+    otp        = Column(String, nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    used       = Column(Boolean, default=False)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())   
     
 
 class Income(Base):
