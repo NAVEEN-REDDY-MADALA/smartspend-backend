@@ -20,7 +20,6 @@ class User(Base):
     goals = relationship("Goal", back_populates="user")
     detected_transactions = relationship("DetectedTransaction")
 
- # ── Add this class to your existing models.py ─────────────────────────────────
 
 class PasswordResetOTP(Base):
     __tablename__ = "password_reset_otps"
@@ -31,8 +30,8 @@ class PasswordResetOTP(Base):
     expires_at = Column(DateTime, nullable=False)
     used       = Column(Boolean, default=False)
 
-    created_at = Column(DateTime(timezone=True), server_default=func.now())   
-    
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
 
 class Income(Base):
     __tablename__ = "income"
@@ -53,7 +52,7 @@ class Expense(Base):
     user_id = Column(Integer, ForeignKey("users.id"))
     amount = Column(Float, nullable=False)
     category = Column(String, nullable=False)
-    merchant = Column(String, nullable=True)   # ← NEW: merchant/shop name
+    merchant = Column(String, nullable=True)
     date = Column(DateTime, default=datetime.utcnow)
     is_auto = Column(Boolean, default=False, nullable=False)
 
@@ -112,7 +111,7 @@ class Goal(Base):
     target_amount = Column(Float, nullable=False)
     current_amount = Column(Float, default=0.0)
     target_date = Column(DateTime)
-    
+
     status = Column(String, default="active")
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -132,13 +131,15 @@ class DetectedTransaction(Base):
     merchant = Column(String)
     category_guess = Column(String)
     category = Column(String)
-    
+
+    credit_source = Column(String, nullable=True)   # ✅ ADDED
+
     transaction_date = Column(DateTime, nullable=False)
     detected_at = Column(DateTime(timezone=True), server_default=func.now())
-    
+
     status = Column(String, default="pending")
     source = Column(String, default="sms")
-    
+
     sms_hash = Column(String, index=True)
     account_number = Column(String)
     reference_number = Column(String)
@@ -151,40 +152,40 @@ class RecurringReminder(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    
+
     name = Column(String, nullable=False)
     amount = Column(Float, nullable=False)
     category = Column(String, default="Bills")
-    
+
     day_of_month = Column(Integer, nullable=False)
     frequency = Column(String, default="monthly")
-    
+
     notify_7_days = Column(Boolean, default=True)
     notify_3_days = Column(Boolean, default=False)
     notify_1_day = Column(Boolean, default=True)
     notify_same_day = Column(Boolean, default=True)
-    
+
     is_active = Column(Boolean, default=True)
     auto_pay = Column(Boolean, default=False)
-    
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     last_notified = Column(DateTime(timezone=True))
     next_payment_date = Column(DateTime)
-    
+
     user = relationship("User")
 
 
 class ReminderNotification(Base):
     __tablename__ = "reminder_notifications"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     reminder_id = Column(Integer, ForeignKey("recurring_reminders.id"), nullable=False)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    
+
     scheduled_for = Column(DateTime, nullable=False)
     sent_at = Column(DateTime(timezone=True))
     status = Column(String, default="pending")
-    
+
     reminder = relationship("RecurringReminder")
     user = relationship("User")
