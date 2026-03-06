@@ -197,13 +197,15 @@ def accept_transaction(
     if txn_type == "credit":
         # ── Credit → save as Income ───────────────────────────────────────────
         credit_source = getattr(detected, "credit_source", "Other") or "Other"
-
         income = models.Income(
-            user_id = current_user.id,
-            amount  = detected.amount,
-            source  = credit_source if credit_source else detected.merchant,
-            date    = detected.transaction_date,
-        )
+    user_id = current_user.id,
+    amount  = detected.amount,
+    source  = detected.merchant if detected.merchant and detected.merchant != "UNKNOWN"
+              else (credit_source or "SMS Income"),
+    date    = detected.transaction_date,
+    is_auto = True,
+)
+        
         db.add(income)
         detected.status = "accepted"
         db.commit()

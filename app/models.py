@@ -41,6 +41,7 @@ class Income(Base):
     amount = Column(Float, nullable=False)
     source = Column(String, nullable=False)
     date = Column(DateTime, default=datetime.utcnow)
+    is_auto = Column(Boolean, default=False, nullable=False)
 
     user = relationship("User", back_populates="incomes")
 
