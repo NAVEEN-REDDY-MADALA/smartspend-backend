@@ -29,14 +29,15 @@ class DetectedTransactionCreate(BaseModel):
 # =====================================================
 # CREATE DETECTED TRANSACTION  (called by Android)
 # =====================================================
+from sqlalchemy.exc import IntegrityError
+
 @router.post("/create")
 def create_detected_transaction(
     data: DetectedTransactionCreate,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    logger.info(f"📥 CREATE DETECTED TRANSACTION — type={data.transaction_type}")
-
+    # Check existing first
     existing = (
         db.query(models.DetectedTransaction)
         .filter(
@@ -46,14 +47,14 @@ def create_detected_transaction(
         .first()
     )
     if existing:
-        return {"duplicate": True}
+        raise HTTPException(status_code=409, detail="Duplicate transaction")
 
     txn_date = datetime.fromtimestamp(data.transaction_date / 1000)
 
     detected = models.DetectedTransaction(
         user_id          = current_user.id,
         amount           = data.amount,
-        transaction_type = data.transaction_type,   # ← now from Android
+        transaction_type = data.transaction_type,
         merchant         = data.merchant,
         category_guess   = data.category_guess,
         category         = data.category_guess,
@@ -61,16 +62,16 @@ def create_detected_transaction(
         status           = "pending",
         source           = "sms",
         sms_hash         = data.sms_hash,
-        credit_source    = data.credit_source,      # ← NEW column
+        credit_source    = data.credit_source,
     )
 
-    db.add(detected)
-    db.commit()
-
-    logger.info(f"✅ Saved {data.transaction_type} transaction")
-    return {"message": "Detected transaction created"}
-
-
+    try:
+        db.add(detected)
+        db.commit()
+        return {"message": "Detected transaction created"}
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Duplicate transaction")
 # =====================================================
 # SYNC DETECTED TRANSACTION  (called by Worker)
 # =====================================================

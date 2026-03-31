@@ -141,7 +141,8 @@ class DetectedTransaction(Base):
     status = Column(String, default="pending")
     source = Column(String, default="sms")
 
-    sms_hash = Column(String, index=True)
+    # sms_hash = Column(String, index=True)
+    sms_hash = Column(String, index=True, unique=True)  # ✅ Add unique=True
     account_number = Column(String)
     reference_number = Column(String)
 
