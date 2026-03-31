@@ -147,7 +147,7 @@ class DetectedTransaction(Base):
     reference_number = Column(String)
 
     user = relationship("User")
-
+#
 
 class RecurringReminder(Base):
     __tablename__ = "recurring_reminders"
