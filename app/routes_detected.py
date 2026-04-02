@@ -377,7 +377,7 @@ def auto_accept_transaction(
         detected.status = "auto_confirmed"
         db.commit()
         return {"message": "Auto-confirmed as expense", "amount": detected.amount, "transaction_type": "debit"}
-
+# 
 
 # =====================================================
 # MARK OLD PENDING AS MISSED
