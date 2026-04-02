@@ -22,12 +22,14 @@ class DetectedTransactionCreate(BaseModel):
     category_guess: str
     transaction_date: int           # milliseconds timestamp
     sms_hash: str
-    transaction_type: str = "debit" # ← NEW: "debit" or "credit"
-    credit_source: str    = ""      # ← NEW: "Salary", "Refund", "Cashback", "UPI Received", "Other"
+    transaction_type: str = "debit"
+    credit_source: str    = ""
 
 
 # =====================================================
 # CREATE DETECTED TRANSACTION  (called by Android)
+# ─ FIX: If already accepted/ignored/auto_confirmed → return 409
+#   so Android knows NOT to re-show it as pending
 # =====================================================
 from sqlalchemy.exc import IntegrityError
 
@@ -37,7 +39,6 @@ def create_detected_transaction(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    # Check existing first
     existing = (
         db.query(models.DetectedTransaction)
         .filter(
@@ -47,7 +48,15 @@ def create_detected_transaction(
         .first()
     )
     if existing:
-        raise HTTPException(status_code=409, detail="Duplicate transaction")
+        # ── FIX: Return the current status so Android can update local DB ──
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": "Duplicate transaction",
+                "status": existing.status,   # "accepted", "ignored", "pending", etc.
+                "sms_hash": existing.sms_hash,
+            }
+        )
 
     txn_date = datetime.fromtimestamp(data.transaction_date / 1000)
 
@@ -68,12 +77,16 @@ def create_detected_transaction(
     try:
         db.add(detected)
         db.commit()
-        return {"message": "Detected transaction created"}
+        return {"message": "Detected transaction created", "status": "pending"}
     except IntegrityError:
         db.rollback()
-        raise HTTPException(status_code=409, detail="Duplicate transaction")
+        raise HTTPException(status_code=409, detail={"error": "Duplicate transaction"})
+
+
 # =====================================================
-# SYNC DETECTED TRANSACTION  (called by Worker)
+# SYNC DETECTED TRANSACTION  (called by Worker/Android background sync)
+# ─ FIX: If already accepted/ignored → return existing status
+#   so Android can update its local DB and stop re-syncing
 # =====================================================
 @router.post("/sync")
 def sync_detected_transaction(
@@ -90,7 +103,12 @@ def sync_detected_transaction(
         .first()
     )
     if existing:
-        return {"synced": True}
+        # ── FIX: Tell Android the real status so it can update local DB ────
+        return {
+            "synced":   True,
+            "status":   existing.status,   # "accepted", "ignored", "pending"
+            "sms_hash": existing.sms_hash,
+        }
 
     txn_date = datetime.fromtimestamp(data.transaction_date / 1000)
 
@@ -110,12 +128,12 @@ def sync_detected_transaction(
 
     db.add(detected)
     db.commit()
-    return {"synced": True}
+    return {"synced": True, "status": "pending"}
 
 
 # =====================================================
 # GET PENDING TRANSACTIONS  (called by frontend)
-# Now returns transaction_type + credit_source
+# ─ STRICTLY only status == "pending"
 # =====================================================
 @router.get("/pending")
 def get_pending_transactions(
@@ -126,7 +144,7 @@ def get_pending_transactions(
         db.query(models.DetectedTransaction)
         .filter(
             models.DetectedTransaction.user_id == current_user.id,
-            models.DetectedTransaction.status == "pending",
+            models.DetectedTransaction.status == "pending",   # STRICTLY pending only
         )
         .order_by(models.DetectedTransaction.transaction_date.desc())
         .all()
@@ -141,15 +159,16 @@ def get_pending_transactions(
             "transaction_date": t.transaction_date.isoformat(),
             "sms_hash":         t.sms_hash,
             "status":           t.status,
-            "transaction_type": t.transaction_type,             # ← NEW
-            "credit_source":    getattr(t, "credit_source", ""), # ← NEW
+            "transaction_type": t.transaction_type,
+            "credit_source":    getattr(t, "credit_source", "") or "",
         }
         for t in pending
     ]
-# 
+
 
 # =====================================================
 # PENDING COUNT  (for badge)
+# ─ STRICTLY only status == "pending"
 # =====================================================
 @router.get("/count")
 def get_pending_count(
@@ -160,7 +179,7 @@ def get_pending_count(
         db.query(models.DetectedTransaction)
         .filter(
             models.DetectedTransaction.user_id == current_user.id,
-            models.DetectedTransaction.status == "pending",
+            models.DetectedTransaction.status == "pending",   # STRICTLY pending only
         )
         .count()
     )
@@ -168,9 +187,33 @@ def get_pending_count(
 
 
 # =====================================================
+# CHECK STATUS  (NEW — called by Android to check if web-accepted)
+# Android calls this to sync local DB with backend status
+# =====================================================
+@router.get("/status/{sms_hash}")
+def get_transaction_status(
+    sms_hash: str,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    detected = (
+        db.query(models.DetectedTransaction)
+        .filter(
+            models.DetectedTransaction.user_id == current_user.id,
+            models.DetectedTransaction.sms_hash == sms_hash,
+        )
+        .first()
+    )
+    if not detected:
+        return {"status": "not_found", "sms_hash": sms_hash}
+    return {"status": detected.status, "sms_hash": sms_hash}
+
+
+# =====================================================
 # ACCEPT TRANSACTION  (Android + Web)
-# ─ debit  → creates Expense (existing behaviour)
-# ─ credit → creates Income  (NEW behaviour)
+# ─ debit  → creates Expense
+# ─ credit → creates Income
+# ─ FIX: If already accepted → return success (idempotent)
 # =====================================================
 @router.post("/accept/{sms_hash}")
 def accept_transaction(
@@ -190,23 +233,30 @@ def accept_transaction(
     if not detected:
         raise HTTPException(status_code=404, detail="Transaction not found")
 
-    if detected.status != "pending":
-        return {"message": "Already processed"}
+    # ── FIX: Idempotent — if already accepted, return success immediately ──
+    if detected.status == "accepted":
+        return {
+            "message":          "Already accepted",
+            "amount":           detected.amount,
+            "merchant":         detected.merchant,
+            "transaction_type": getattr(detected, "transaction_type", "debit"),
+        }
+
+    if detected.status == "ignored":
+        return {"message": "Already ignored"}
 
     txn_type = getattr(detected, "transaction_type", "debit")
 
     if txn_type == "credit":
-        # ── Credit → save as Income ───────────────────────────────────────────
         credit_source = getattr(detected, "credit_source", "Other") or "Other"
         income = models.Income(
-    user_id = current_user.id,
-    amount  = detected.amount,
-    source  = detected.merchant if detected.merchant and detected.merchant != "UNKNOWN"
-              else (credit_source or "SMS Income"),
-    date    = detected.transaction_date,
-    is_auto = True,
-)
-        
+            user_id = current_user.id,
+            amount  = detected.amount,
+            source  = detected.merchant if detected.merchant and detected.merchant != "UNKNOWN"
+                      else (credit_source or "SMS Income"),
+            date    = detected.transaction_date,
+            is_auto = True,
+        )
         db.add(income)
         detected.status = "accepted"
         db.commit()
@@ -221,7 +271,6 @@ def accept_transaction(
         }
 
     else:
-        # ── Debit → save as Expense (existing behaviour) ──────────────────────
         expense = models.Expense(
             user_id  = current_user.id,
             amount   = detected.amount,
@@ -246,6 +295,7 @@ def accept_transaction(
 
 # =====================================================
 # IGNORE TRANSACTION
+# ─ FIX: Idempotent — if already ignored → return success
 # =====================================================
 @router.post("/ignore/{sms_hash}")
 def ignore_transaction(
@@ -265,9 +315,68 @@ def ignore_transaction(
     if not detected:
         raise HTTPException(status_code=404, detail="Transaction not found")
 
+    if detected.status in ("ignored", "accepted"):
+        return {"message": f"Already {detected.status}"}
+
     detected.status = "ignored"
     db.commit()
     return {"message": "Transaction ignored"}
+
+
+# =====================================================
+# AUTO-ACCEPT  (called by Android in auto mode)
+# ─ Creates expense/income AND marks as auto_confirmed
+# =====================================================
+@router.post("/auto-accept/{sms_hash}")
+def auto_accept_transaction(
+    sms_hash: str,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    detected = (
+        db.query(models.DetectedTransaction)
+        .filter(
+            models.DetectedTransaction.user_id == current_user.id,
+            models.DetectedTransaction.sms_hash == sms_hash,
+        )
+        .first()
+    )
+
+    if not detected:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+
+    if detected.status in ("accepted", "auto_confirmed"):
+        return {"message": "Already processed", "status": detected.status}
+
+    txn_type = getattr(detected, "transaction_type", "debit")
+
+    if txn_type == "credit":
+        credit_source = getattr(detected, "credit_source", "Other") or "Other"
+        income = models.Income(
+            user_id = current_user.id,
+            amount  = detected.amount,
+            source  = detected.merchant if detected.merchant and detected.merchant != "UNKNOWN"
+                      else (credit_source or "SMS Income"),
+            date    = detected.transaction_date,
+            is_auto = True,
+        )
+        db.add(income)
+        detected.status = "auto_confirmed"
+        db.commit()
+        return {"message": "Auto-confirmed as income", "amount": detected.amount, "transaction_type": "credit"}
+    else:
+        expense = models.Expense(
+            user_id  = current_user.id,
+            amount   = detected.amount,
+            category = detected.category or detected.category_guess,
+            merchant = detected.merchant,
+            date     = detected.transaction_date,
+            is_auto  = True,
+        )
+        db.add(expense)
+        detected.status = "auto_confirmed"
+        db.commit()
+        return {"message": "Auto-confirmed as expense", "amount": detected.amount, "transaction_type": "debit"}
 
 
 # =====================================================
@@ -279,7 +388,6 @@ def mark_old_as_missed(
     current_user: models.User = Depends(get_current_user),
 ):
     cutoff = datetime.utcnow() - timedelta(minutes=10)
-
     old = (
         db.query(models.DetectedTransaction)
         .filter(
@@ -289,16 +397,14 @@ def mark_old_as_missed(
         )
         .all()
     )
-
     for t in old:
         t.status = "missed"
-
     db.commit()
     return {"marked": len(old)}
 
 
 # =====================================================
-# PENDING COUNT BY TYPE  (optional — for split badges)
+# PENDING COUNT BY TYPE
 # =====================================================
 @router.get("/count/split")
 def get_pending_count_split(
